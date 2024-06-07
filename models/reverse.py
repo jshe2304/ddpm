@@ -12,12 +12,17 @@ class ReverseDiffusion(nn.Module):
     U-Net model for reverse diffusion steps. 
     '''
 
-    def __init__(self, T, time_embedding_dim=32, time_n=512):
+    def __init__(self, forward_process, time_embedding_dim=32, time_n=512, device=torch.device('cpu')):
         super().__init__()
         
+        self.betas = forward_process.betas
+        self.alphas = forward_process.alphas
+        self.alpha_bars = forward_process.alpha_bars
+        self.T = forward_process.T
         self.time_embedding_dim = time_embedding_dim
+        self.device = device
         
-        self.time_embedding = self.get_time_embeddings(T, time_embedding_dim, time_n)
+        self.time_embedding = self.get_time_embeddings(self.T, time_embedding_dim, time_n).to(device)
         
         # Encoder
         self.down1 = unet.DownBlock(3, 32, time_embedding_dim)
@@ -37,7 +42,7 @@ class ReverseDiffusion(nn.Module):
             nn.Conv2d(32, 3, kernel_size=1)
         )
 
-    def forward(self, x, t):
+    def step(self, x, t):
         time_embedding = self.time_embedding[t]
         
         # Encode
@@ -54,6 +59,17 @@ class ReverseDiffusion(nn.Module):
         # Map to RBG
         x = self.rgb(x)
         
+        return x
+    
+    def forward(self, x):
+        for t in range(T):
+            z = torch.randn_like(x) if t > 0 else torch.zeros(x.shape)
+            z = z.to(device)
+            
+            x -= (1-self.alphas[t]) * self.step(x, t) * ((1 - self.alpha_bars[t]) ** -0.5)
+            x *= self.alphas[t] ** -0.5
+            x += z * self.betas[t] ** 0.5
+            
         return x
 
     @staticmethod

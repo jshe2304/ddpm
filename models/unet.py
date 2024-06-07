@@ -33,9 +33,6 @@ class DownBlock(nn.Module):
         self.downsample = nn.MaxPool2d(2)
         
     def forward(self, x, time_embedding):
-        if time_embedding.dim() != 1:
-            raise Exception('Bad time embedding.')
-        
         x = self.conv1(x)
         x += self.time_mlp(time_embedding).unsqueeze(-1).unsqueeze(-1)
         x = self.conv2(x)
@@ -67,9 +64,6 @@ class BottleneckBlock(nn.Module):
         )
 
     def forward(self, x, time_embedding):
-        if time_embedding.dim() != 1:
-            raise Exception('Bad time embedding.')
-        
         x = self.conv1(x)
         x += self.time_mlp(time_embedding).unsqueeze(-1).unsqueeze(-1)
         x = self.conv2(x)
