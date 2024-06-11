@@ -15,13 +15,12 @@ class ForwardDiffusion(nn.Module):
         super().__init__()
         
         self.T = T
+        self.schedule = schedule
         self.device = device
+        self.to(device)
+
+        self.set_schedule(noise_param)
         
-        self.betas = self.get_betas(noise_param, T, schedule).to(device)
-        
-        self.alphas = 1 - self.betas
-        self.alpha_bars = torch.cumprod(self.alphas, dim=0)
-    
     def step(self, x_i, i, j):
         '''
         Sample from q(x_j | x_i). 
@@ -66,18 +65,37 @@ class ForwardDiffusion(nn.Module):
         
         return mean + std * eps, eps
     
-    @staticmethod
-    def get_betas(noise_param, T, schedule):
+    def set_schedule(self, noise_param):
         '''
-        Create betas schedule Tensor
+        Sets betas, alphas, and alpha bars according to schedule
         '''
-        if schedule == 'linear':
-            if hasattr(noise_param, '__iter__') and len(noise_param) != 2:
+        zero = torch.zeros(1).to(self.device)
+        if self.schedule == 'linear':
+            if not hasattr(noise_param, '__iter__') or len(noise_param) != 2:
                 raise Exception('Bad noise parameter. Need 2-iterable.')
             if noise_param[0] <= 0 or noise_param[1] <= 0:
                 raise Exception('Betas must be positive. ')
-            
-            return torch.cat((
-                torch.Tensor([0]), 
-                torch.linspace(*noise_param, T)
+
+            self.betas = torch.cat((
+                zero, 
+                torch.linspace(*noise_param, self.T).to(self.device)
             ))
+            self.alphas = 1 - self.betas
+            self.alpha_bars = torch.cumprod(self.alphas, dim=0)
+
+        if self.schedule == 'cosine':
+            s = noise_param
+            if type(s) is not float:
+                raise Exception('Bad s.')
+                
+            f = lambda t: torch.cos(((t/self.T + s)/(1 + s)) * torch.pi/2) ** 2
+
+            t = torch.linspace(0, self.T, self.T + 1).to(self.device)
+            self.alpha_bars = f(t)/f(zero)
+            self.betas = torch.cat((
+                zero, 
+                1 - (self.alpha_bars[1:] / self.alpha_bars[:-1])
+            ))
+            self.betas = torch.clamp(self.betas, 0.00001, 0.9999)
+            self.alphas = 1 - self.betas
+            

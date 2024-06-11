@@ -18,59 +18,75 @@ class ReverseDiffusion(nn.Module):
         self.betas = forward_process.betas
         self.alphas = forward_process.alphas
         self.alpha_bars = forward_process.alpha_bars
+        
         self.T = forward_process.T
         self.time_embedding_dim = time_embedding_dim
         self.device = device
         
-        self.time_embedding = self.get_time_embeddings(self.T, time_embedding_dim, time_n).to(device)
+        self.time_embeddings = self.get_time_embeddings(self.T, time_embedding_dim, time_n).to(device)
         
         # Encoder
-        self.down1 = unet.DownBlock(3, 32, time_embedding_dim)
-        self.down2 = unet.DownBlock(32, 64, time_embedding_dim)
-        
+        self.down1 = unet.DownBlock(3, 16, time_embedding_dim)
+        self.down2 = unet.DownBlock(16, 32, time_embedding_dim)
+        self.down3 = unet.DownBlock(32, 64, time_embedding_dim)
+
         # Bottleneck
         self.bottleneck = unet.BottleneckBlock(64, 128, time_embedding_dim)
         
         # Decoder
         self.up1 = unet.UpBlock(128, 64, 64)
         self.up2 = unet.UpBlock(64, 32, 32)
+        self.up3 = unet.UpBlock(32, 16, 16)
         
         # RGB Map
         self.rgb = nn.Sequential(
-            nn.BatchNorm2d(32), 
+            nn.GroupNorm(16, 16), 
             nn.ReLU(), 
-            nn.Conv2d(32, 3, kernel_size=1)
+            nn.Conv2d(16, 3, kernel_size=1)
         )
 
+        self.to(device)
+
     def step(self, x, t):
-        time_embedding = self.time_embedding[t]
+        time_embedding = self.time_embeddings[t]
         
         # Encode
         residual1, x = self.down1(x, time_embedding)
         residual2, x = self.down2(x, time_embedding)
-        
+        residual3, x = self.down3(x, time_embedding)
+
         # Bottleneck
         x = self.bottleneck(x, time_embedding)
         
         # Decode
-        x = self.up1(x, residual2)
-        x = self.up2(x, residual1)
+        x = self.up1(x, residual3)
+        x = self.up2(x, residual2)
+        x = self.up3(x, residual1)
         
         # Map to RBG
         x = self.rgb(x)
         
         return x
     
-    def forward(self, x):
-        for t in range(T):
+    def forward(self, x, record_steps=False):
+        if record_steps:
+            steps = [x.detach().cpu()]
+        
+        for t in range(self.T, 0, -1):
             z = torch.randn_like(x) if t > 0 else torch.zeros(x.shape)
-            z = z.to(device)
+            z = z.to(self.device)
             
             x -= (1-self.alphas[t]) * self.step(x, t) * ((1 - self.alpha_bars[t]) ** -0.5)
             x *= self.alphas[t] ** -0.5
-            x += z * self.betas[t] ** 0.5
+            x += z * (self.betas[t] ** 0.5)
+
+            #x = torch.clamp(x, -1, 1)
+            x /= torch.max(x.max(), torch.abs(x.min()))
+
+            if record_steps:
+                steps.append(x.detach().cpu())
             
-        return x
+        return steps if record_steps else x
 
     @staticmethod
     def get_time_embeddings(T, time_embedding_dim, n=10000):

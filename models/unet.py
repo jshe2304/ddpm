@@ -14,20 +14,24 @@ class DownBlock(nn.Module):
         super().__init__()
         
         self.conv1 = nn.Sequential(
-            nn.BatchNorm2d(in_channels), 
-            nn.ReLU(), 
+            nn.GroupNorm(in_channels if in_channels % 8 else 8, in_channels), 
+            #nn.ReLU(), 
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         )
         
         self.time_mlp = nn.Sequential(
-            nn.ReLU(), 
-            nn.Linear(time_embedding_dim, out_channels)
+            #nn.ReLU(), 
+            nn.Linear(time_embedding_dim, out_channels), 
+            nn.SiLU(), 
+            nn.Linear(out_channels, out_channels)
         )
         
         self.conv2 = nn.Sequential(
-            nn.BatchNorm2d(out_channels), 
-            nn.ReLU(), 
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+            nn.GroupNorm(16, out_channels), 
+            #nn.ReLU(), 
+            #nn.Dropout(0.1), 
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), 
+            nn.SiLU()
         )
         
         self.downsample = nn.MaxPool2d(2)
@@ -47,20 +51,23 @@ class BottleneckBlock(nn.Module):
         super().__init__()
         
         self.conv1 = nn.Sequential(
-            nn.BatchNorm2d(in_channels), 
-            nn.ReLU(), 
+            nn.GroupNorm(16, in_channels), 
+            #nn.ReLU(), 
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         )
         
         self.time_mlp = nn.Sequential(
-            nn.ReLU(), 
-            nn.Linear(time_embedding_dim, out_channels)
+            nn.Linear(time_embedding_dim, out_channels), 
+            nn.SiLU(), 
+            nn.Linear(out_channels, out_channels)
         )
         
         self.conv2 = nn.Sequential(
-            nn.BatchNorm2d(out_channels), 
-            nn.ReLU(), 
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+            nn.GroupNorm(16, out_channels), 
+            #nn.ReLU(), 
+            #nn.Dropout(0.1), 
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), 
+            nn.SiLU()
         )
 
     def forward(self, x, time_embedding):
@@ -76,23 +83,26 @@ class UpBlock(nn.Module):
     '''
     def __init__(self, in_channels, residual_channels, out_channels):
         super().__init__()
-        
-        self.upconv = nn.Sequential(
-            nn.BatchNorm2d(in_channels), 
-            nn.ReLU(), 
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1), 
-        )
+
+        self.upconv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1)
+        #self.upconv = nn.Sequential(
+        #    nn.GroupNorm(16, in_channels), 
+        #    nn.ReLU(), 
+        #    nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1), 
+        #)
         
         self.conv1 = nn.Sequential(
-            nn.BatchNorm2d(out_channels + residual_channels), 
-            nn.ReLU(), 
+            nn.GroupNorm(16, out_channels + residual_channels), 
+            #nn.ReLU(), 
             nn.Conv2d(out_channels + residual_channels, out_channels, kernel_size=3, padding=1)
         )
         
         self.conv2 = nn.Sequential(
-            nn.BatchNorm2d(out_channels), 
-            nn.ReLU(), 
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+            nn.GroupNorm(16, out_channels), 
+            #nn.ReLU(), 
+            #nn.Dropout(0.1), 
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), 
+            nn.SiLU()
         )
         
     def forward(self, x, residual):
